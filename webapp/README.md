@@ -1,20 +1,74 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# SonicWave — Local Development Guide
 
-# Run and deploy your AI Studio app
+## Prerequisites
 
-This contains everything you need to run your app locally.
+- [Node.js](https://nodejs.org/) v22+
+- npm (bundled with Node.js)
 
-View your app in AI Studio: https://ai.studio/apps/0c4e2a04-9d71-4784-a259-6b6b70e12716
-
-## Run Locally
-
-**Prerequisites:**  Node.js
-
+## Setup
 
 1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+
+   ```bash
+   npm install
+   ```
+
+2. (Optional) Create a `.env.local` file if you need Gemini API support:
+
+   ```bash
+   cp .env.example .env.local
+   ```
+
+   Then set your `GEMINI_API_KEY` inside `.env.local`. This is not required for the core app to run locally.
+
+## Running in Development
+
+```bash
+npm run dev
+```
+
+Starts the Express + Vite dev server at **http://localhost:3001** with hot module reloading.
+
+## Running in Production
+
+1. Build the frontend:
+
+   ```bash
+   npm run build
+   ```
+
+2. Start the server:
+
+   ```bash
+   npm run start
+   ```
+
+The app will be available at **http://localhost:3001**, serving the compiled frontend from `/dist`.
+
+## Available Scripts
+
+| Script | Description |
+|---|---|
+| `npm run dev` | Start dev server with HMR (uses `tsx`) |
+| `npm run build` | Build frontend for production |
+| `npm run start` | Run production server |
+| `npm run preview` | Preview the production build locally |
+| `npm run lint` | Type-check with TypeScript |
+| `npm run clean` | Remove the `dist` directory |
+
+## Logging In
+
+The app uses **mock authentication** — no real credentials are required. Enter any username on the login page to sign in.
+
+## API Endpoints
+
+All endpoints except `/api/login` require an `Authorization: Bearer <token>` header.
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/login` | Authenticate and get a token |
+| `GET` | `/api/songs` | List all songs |
+| `GET` | `/api/songs/:id` | Get a song by ID |
+| `POST` | `/api/songs` | Add a new song |
+
+> **Note:** Song data is stored in-memory and resets every time the server restarts.
