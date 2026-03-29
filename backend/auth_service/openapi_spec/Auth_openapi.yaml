@@ -1,0 +1,123 @@
+openapi: 3.0.1
+info:
+  title: Auth
+  version: 0.1.0
+servers:
+  - url: '{server}:{port}/auth'
+    variables:
+      server:
+        default: http://localhost
+      port:
+        default: '9090'
+paths:
+  /register:
+    post:
+      operationId: postRegister
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+        required: true
+      responses:
+        '201':
+          description: Created
+        '400':
+          description: BadRequest
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorPayload'
+        '409':
+          description: Conflict
+        '500':
+          description: InternalServerError
+  /validate:
+    get:
+      operationId: getValidate
+      parameters:
+        - name: Authorization
+          in: header
+          schema:
+            type: string
+            nullable: true
+      responses:
+        '200':
+          description: Ok
+        '400':
+          description: BadRequest
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorPayload'
+        '401':
+          description: Unauthorized
+  /login:
+    post:
+      operationId: postLogin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+        required: true
+      responses:
+        '200':
+          description: Ok
+        '400':
+          description: BadRequest
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorPayload'
+        '401':
+          description: Unauthorized
+        '500':
+          description: InternalServerError
+components:
+  schemas:
+    ErrorPayload:
+      required:
+        - message
+        - method
+        - path
+        - reason
+        - status
+        - timestamp
+      type: object
+      properties:
+        timestamp:
+          type: string
+        status:
+          type: integer
+          format: int64
+        reason:
+          type: string
+        message:
+          type: string
+        path:
+          type: string
+        method:
+          type: string
+    LoginRequest:
+      required:
+        - password
+        - username
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+      additionalProperties: false
+    RegisterRequest:
+      required:
+        - password
+        - username
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+      additionalProperties: false

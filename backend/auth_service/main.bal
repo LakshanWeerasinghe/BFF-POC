@@ -5,7 +5,7 @@ import ballerina/jwt;
     cors: {
         allowOrigins: ["http://localhost:3001"],
         allowMethods: ["GET", "POST", "OPTIONS"],
-        allowHeaders: ["Content-Type", "Authorization"],
+        allowHeaders: ["Content-Type", "Authorization", "X-Sonicwave-User-Auth"],
         allowCredentials: true
     }
 }
@@ -52,15 +52,27 @@ service /auth on new http:Listener(serverPort) {
         return <http:Created>{body: toAuthResponse(newUser, token)};
     }
 
-    // GET /auth/validate — called by other services to validate a Bearer token
-    resource function get validate(@http:Header string? Authorization)
+    // GET /auth/validate — called by webapp_backend (direct) and via APIM (browser startup check)
+    //
+    // Two flows reach this endpoint:
+    //   1. Direct (webapp_backend → auth_service):
+    //      Authorization: Bearer <user_jwt>
+    //   2. Via APIM (browser → BFF → APIM → auth_service):
+    //      APIM strips Authorization (which held the CC token) before forwarding.
+    //      BFF put the user JWT in X-Sonicwave-User-Auth which APIM passes through.
+    //
+    // Precedence: X-Sonicwave-User-Auth > Authorization
+    resource function get validate(
+            @http:Header string? Authorization,
+            @http:Header {name: "X-Sonicwave-User-Auth"} string? xSonicwaveUserAuth)
             returns http:Ok|http:Unauthorized {
 
-        if Authorization is () || !Authorization.startsWith("Bearer ") {
+        string? rawHeader = xSonicwaveUserAuth ?: Authorization;
+        if rawHeader is () {
             return <http:Unauthorized>{body: <ErrorResponse>{'error: "Unauthorized"}};
         }
 
-        string token = Authorization.substring(7);
+        string token = rawHeader.startsWith("Bearer ") ? rawHeader.substring(7) : rawHeader;
         jwt:Payload|error payload = validateJwtToken(token);
         if payload is error {
             return <http:Unauthorized>{body: <ErrorResponse>{'error: "Unauthorized"}};

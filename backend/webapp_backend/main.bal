@@ -5,15 +5,18 @@ import ballerina/time;
     cors: {
         allowOrigins: ["http://localhost:3001"],
         allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        allowHeaders: ["Authorization", "Content-Type"],
+        allowHeaders: ["Authorization", "Content-Type", "X-Sonicwave-User-Auth"],
         allowCredentials: true
     }
 }
 service /api on new http:Listener(serverPort) {
 
     // GET /api/songs - Get all songs owned by the caller
-    resource function get songs(@http:Header string? Authorization) returns SongResponse[]|ErrorResponse|http:Unauthorized {
-        CallerInfo|error caller = validateAuthHeader(Authorization);
+    resource function get songs(
+        @http:Header string? Authorization,
+        @http:Header {name: "X-Sonicwave-User-Auth"} string? xSonicwaveUserAuth
+    ) returns SongResponse[]|ErrorResponse|http:Unauthorized {
+        CallerInfo|error caller = validateAuthHeader(Authorization, xSonicwaveUserAuth);
         if caller is error {
             return <http:Unauthorized>{
                 body: {'error: "Unauthorized"}
@@ -31,8 +34,11 @@ service /api on new http:Listener(serverPort) {
     }
 
     // GET /api/songs/{id} - Get a song by ID (only if owned by caller)
-    resource function get songs/[string id](@http:Header string? Authorization) returns SongResponse|ErrorResponse|http:Unauthorized|http:NotFound {
-        CallerInfo|error caller = validateAuthHeader(Authorization);
+    resource function get songs/[string id](
+        @http:Header string? Authorization,
+        @http:Header {name: "X-Sonicwave-User-Auth"} string? xSonicwaveUserAuth
+    ) returns SongResponse|ErrorResponse|http:Unauthorized|http:NotFound {
+        CallerInfo|error caller = validateAuthHeader(Authorization, xSonicwaveUserAuth);
         if caller is error {
             return <http:Unauthorized>{
                 body: {'error: "Unauthorized"}
@@ -60,8 +66,12 @@ service /api on new http:Listener(serverPort) {
     }
 
     // POST /api/songs - Create a new song owned by the caller
-    resource function post songs(@http:Header string? Authorization, @http:Payload CreateSongRequest songRequest) returns SongResponse|ErrorResponse|http:Unauthorized|http:BadRequest|http:Created {
-        CallerInfo|error caller = validateAuthHeader(Authorization);
+    resource function post songs(
+        @http:Header string? Authorization,
+        @http:Header {name: "X-Sonicwave-User-Auth"} string? xSonicwaveUserAuth,
+        @http:Payload CreateSongRequest songRequest
+    ) returns SongResponse|ErrorResponse|http:Unauthorized|http:BadRequest|http:Created {
+        CallerInfo|error caller = validateAuthHeader(Authorization, xSonicwaveUserAuth);
         if caller is error {
             return <http:Unauthorized>{
                 body: {'error: "Unauthorized"}
@@ -117,16 +127,23 @@ service /api on new http:Listener(serverPort) {
     }
 }
 
-// Validates the Authorization header by delegating to auth_service.
-// Returns CallerInfo (userId + username) on success, error on failure.
-function validateAuthHeader(string? authHeader) returns CallerInfo|error {
-    if authHeader is () {
-        return error("Missing Authorization header");
+// Resolves the user token with APIM awareness:
+//   - When running behind APIM, the APIM CC token arrives in Authorization and the
+//     user-scoped auth_service JWT is forwarded in X-Sonicwave-User-Auth.
+//   - When called directly (dev/test, no APIM), Authorization carries the user JWT.
+// In both cases the resolved token is validated against auth_service.
+function validateAuthHeader(string? authorization, string? xSonicwaveUserAuth) returns CallerInfo|error {
+    // Prefer the dedicated user-auth header (APIM flow) over Authorization
+    string? headerToUse = xSonicwaveUserAuth ?: authorization;
+
+    if headerToUse is () {
+        return error("Missing auth header");
     }
-    string authHeaderValue = authHeader;
-    if !authHeaderValue.startsWith("Bearer ") {
-        return error("Invalid Authorization header format");
+
+    string headerValue = headerToUse;
+    if headerValue.startsWith("Bearer ") {
+        return check validateWithAuthService(headerValue.substring(7));
     }
-    string token = authHeaderValue.substring(7);
-    return check validateWithAuthService(token);
+    // Bare token (no Bearer prefix) — also accepted
+    return check validateWithAuthService(headerValue);
 }

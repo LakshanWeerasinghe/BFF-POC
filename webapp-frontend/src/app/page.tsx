@@ -1,4 +1,6 @@
-import { Link } from 'react-router-dom';
+'use client';
+
+import Link from 'next/link';
 import { useAuth } from '../context/AuthContext';
 import { motion } from 'motion/react';
 import { PlayCircle, Music, Headphones } from 'lucide-react';
@@ -34,7 +36,7 @@ export default function Home() {
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
           {user ? (
             <Link 
-              to="/songs" 
+              href="/songs" 
               className="group relative inline-flex items-center justify-center gap-2 px-8 py-4 bg-orange-500 text-black font-bold rounded-full overflow-hidden transition-transform hover:scale-105"
             >
               <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform"></div>
@@ -43,7 +45,7 @@ export default function Home() {
             </Link>
           ) : (
             <Link 
-              to="/login" 
+              href="/login" 
               className="group relative inline-flex items-center justify-center gap-2 px-8 py-4 bg-orange-500 text-black font-bold rounded-full overflow-hidden transition-transform hover:scale-105"
             >
               <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform"></div>

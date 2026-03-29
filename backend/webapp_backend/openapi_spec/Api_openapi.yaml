@@ -1,0 +1,181 @@
+openapi: 3.0.1
+info:
+  title: Api
+  version: 0.1.0
+servers:
+  - url: '{server}:{port}/api'
+    variables:
+      server:
+        default: http://localhost
+      port:
+        default: '8080'
+paths:
+  /songs:
+    get:
+      operationId: getSongs
+      parameters:
+        - name: Authorization
+          in: header
+          schema:
+            type: string
+            nullable: true
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: array
+                    items:
+                      $ref: '#/components/schemas/SongResponse'
+                  - $ref: '#/components/schemas/ErrorResponse'
+        '400':
+          description: BadRequest
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorPayload'
+        '401':
+          description: Unauthorized
+    post:
+      operationId: postSongs
+      parameters:
+        - name: Authorization
+          in: header
+          schema:
+            type: string
+            nullable: true
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSongRequest'
+        required: true
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/SongResponse'
+                  - $ref: '#/components/schemas/ErrorResponse'
+                  - {}
+        '400':
+          description: BadRequest
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorPayload'
+        '401':
+          description: Unauthorized
+  /songs/{id}:
+    get:
+      operationId: getSongsId
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: Authorization
+          in: header
+          schema:
+            type: string
+            nullable: true
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/SongResponse'
+                  - $ref: '#/components/schemas/ErrorResponse'
+        '400':
+          description: BadRequest
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorPayload'
+        '401':
+          description: Unauthorized
+        '404':
+          description: NotFound
+components:
+  schemas:
+    CreateSongRequest:
+      required:
+        - artist
+        - title
+      type: object
+      properties:
+        title:
+          type: string
+        artist:
+          type: string
+        album:
+          type: string
+        duration:
+          type: string
+        coverUrl:
+          type: string
+      additionalProperties: false
+    ErrorPayload:
+      required:
+        - message
+        - method
+        - path
+        - reason
+        - status
+        - timestamp
+      type: object
+      properties:
+        timestamp:
+          type: string
+        status:
+          type: integer
+          format: int64
+        reason:
+          type: string
+        message:
+          type: string
+        path:
+          type: string
+        method:
+          type: string
+    ErrorResponse:
+      required:
+        - error
+      type: object
+      properties:
+        error:
+          type: string
+      additionalProperties: false
+    SongResponse:
+      required:
+        - album
+        - artist
+        - coverUrl
+        - duration
+        - id
+        - ownerId
+        - title
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        artist:
+          type: string
+        album:
+          type: string
+        duration:
+          type: string
+        coverUrl:
+          type: string
+        ownerId:
+          type: string
+      additionalProperties: false
