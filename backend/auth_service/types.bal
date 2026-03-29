@@ -33,3 +33,8 @@ type AuthResponse record {|
 type ErrorResponse record {|
     string 'error;
 |};
+
+type ValidateResponse record {|
+    string userId;
+    string username;
+|};

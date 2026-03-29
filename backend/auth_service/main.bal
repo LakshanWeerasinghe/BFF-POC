@@ -1,10 +1,11 @@
 import ballerina/http;
+import ballerina/jwt;
 
 @http:ServiceConfig {
     cors: {
         allowOrigins: ["http://localhost:3001"],
-        allowMethods: ["POST", "OPTIONS"],
-        allowHeaders: ["Content-Type"],
+        allowMethods: ["GET", "POST", "OPTIONS"],
+        allowHeaders: ["Content-Type", "Authorization"],
         allowCredentials: true
     }
 }
@@ -49,6 +50,34 @@ service /auth on new http:Listener(serverPort) {
         }
 
         return <http:Created>{body: toAuthResponse(newUser, token)};
+    }
+
+    // GET /auth/validate — called by other services to validate a Bearer token
+    resource function get validate(@http:Header string? Authorization)
+            returns http:Ok|http:Unauthorized {
+
+        if Authorization is () || !Authorization.startsWith("Bearer ") {
+            return <http:Unauthorized>{body: <ErrorResponse>{'error: "Unauthorized"}};
+        }
+
+        string token = Authorization.substring(7);
+        jwt:Payload|error payload = validateJwtToken(token);
+        if payload is error {
+            return <http:Unauthorized>{body: <ErrorResponse>{'error: "Unauthorized"}};
+        }
+
+        string? username = payload.sub;
+        if username is () {
+            return <http:Unauthorized>{body: <ErrorResponse>{'error: "Unauthorized"}};
+        }
+
+        string userId = "";
+        anydata userIdData = payload["userId"];
+        if userIdData is string {
+            userId = userIdData;
+        }
+
+        return <http:Ok>{body: <ValidateResponse>{userId: userId, username: username}};
     }
 
     // POST /auth/login

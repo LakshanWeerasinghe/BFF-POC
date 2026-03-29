@@ -3,6 +3,18 @@ import ballerina/jwt;
 import ballerina/sql;
 import ballerina/uuid;
 
+// JWT token validation
+function validateJwtToken(string token) returns jwt:Payload|error {
+    jwt:ValidatorConfig validatorConfig = {
+        issuer: jwtIssuer,
+        audience: "sonicwave-users",
+        signatureConfig: {
+            secret: jwtSecret
+        }
+    };
+    return check jwt:validate(token, validatorConfig);
+}
+
 // --- Password helpers ---
 
 function generateSalt() returns string {

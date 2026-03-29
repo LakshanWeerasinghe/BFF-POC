@@ -1,34 +1,22 @@
-// Database record types
-type User record {|
-    int id;
+// Caller identity returned by auth validation
+type CallerInfo record {|
+    int    userId;
     string username;
-    string created_at?;
 |};
 
+// Database record types
 type Song record {|
-    int id;
+    int    id;
     string title;
     string artist;
     string album;
     string duration;
     string cover_url?;
+    int    user_id;
     string created_at?;
 |};
 
 // API request/response types
-type LoginRequest record {|
-    string username;
-|};
-
-type LoginResponse record {|
-    string token;
-    UserResponse user;
-|};
-
-type UserResponse record {|
-    string username;
-|};
-
 type SongResponse record {|
     string id;
     string title;
@@ -36,6 +24,7 @@ type SongResponse record {|
     string album;
     string duration;
     string coverUrl;
+    string ownerId;
 |};
 
 type CreateSongRequest record {|
@@ -48,11 +37,4 @@ type CreateSongRequest record {|
 
 type ErrorResponse record {|
     string 'error;
-|};
-
-// JWT payload type
-type JwtPayload record {|
-    string sub;
-    int exp;
-    int iat;
 |};
