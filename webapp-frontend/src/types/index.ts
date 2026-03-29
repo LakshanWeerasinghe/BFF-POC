@@ -7,8 +7,8 @@ export interface User {
   username: string;
 }
 
+// BFF strips the JWT from the body — only { user } reaches the browser.
 export interface AuthResponse {
-  token: string;
   user: User;
 }
 

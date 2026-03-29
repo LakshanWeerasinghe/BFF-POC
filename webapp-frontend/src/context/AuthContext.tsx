@@ -6,81 +6,74 @@ import type { User } from '../types';
 
 interface AuthContextType {
   user: User | null;
-  token: string | null;
   login: (username: string, password: string) => Promise<void>;
   register: (username: string, password: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   isLoading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-function persistSession(token: string, user: User) {
-  localStorage.setItem('token', token);
+// User display info is cached in localStorage (non-sensitive).
+// The actual auth token lives in an httpOnly cookie managed by the BFF.
+function persistUser(user: User) {
   localStorage.setItem('user', JSON.stringify(user));
 }
 
-function clearSession() {
-  localStorage.removeItem('token');
+function clearUser() {
   localStorage.removeItem('user');
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(null);
+  const [user, setUser]         = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const logout = useCallback(() => {
-    setToken(null);
+  const logout = useCallback(async () => {
+    try {
+      await authApi.logout(); // BFF clears the httpOnly cookie
+    } catch { /* ignore network errors on logout */ }
     setUser(null);
-    clearSession();
+    clearUser();
   }, []);
 
-  // Validate the stored token on startup — clear state if expired or invalid
+  // On startup: call BFF validate to check whether the session cookie is still valid.
+  // If valid the BFF returns { userId, username }; if not it returns 401.
   useEffect(() => {
-    const storedToken = localStorage.getItem('token');
-    const storedUser = localStorage.getItem('user');
-
-    if (!storedToken || !storedUser) {
-      setIsLoading(false);
-      return;
-    }
-
     authApi
       .validate()
-      .then(() => {
-        setToken(storedToken);
-        setUser(JSON.parse(storedUser));
+      .then(({ userId, username }) => {
+        const u: User = { id: userId, username };
+        setUser(u);
+        persistUser(u);
       })
       .catch(() => {
-        // Token is expired or invalid — force a clean state
-        clearSession();
+        // Cookie absent or expired — clear any stale display cache
+        clearUser();
       })
       .finally(() => setIsLoading(false));
   }, []);
 
-  // Listen for 401 events dispatched by the API client
+  // Listen for 401 events dispatched by apiFetch
   useEffect(() => {
-    window.addEventListener('auth:unauthorized', logout);
-    return () => window.removeEventListener('auth:unauthorized', logout);
+    const handler = () => { logout(); };
+    window.addEventListener('auth:unauthorized', handler);
+    return () => window.removeEventListener('auth:unauthorized', handler);
   }, [logout]);
 
   const login = async (username: string, password: string) => {
-    const data = await authApi.login(username, password);
-    setToken(data.token);
-    setUser(data.user);
-    persistSession(data.token, data.user);
+    const { user: u } = await authApi.login(username, password);
+    setUser(u);
+    persistUser(u);
   };
 
   const register = async (username: string, password: string) => {
-    const data = await authApi.register(username, password);
-    setToken(data.token);
-    setUser(data.user);
-    persistSession(data.token, data.user);
+    const { user: u } = await authApi.register(username, password);
+    setUser(u);
+    persistUser(u);
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, login, register, logout, isLoading }}>
+    <AuthContext.Provider value={{ user, login, register, logout, isLoading }}>
       {children}
     </AuthContext.Provider>
   );
