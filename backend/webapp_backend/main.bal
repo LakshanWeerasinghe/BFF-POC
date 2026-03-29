@@ -15,7 +15,7 @@ service /api on new http:Listener(serverPort) {
     // POST /api/login - Authenticate user
     resource function post login(@http:Payload LoginRequest loginRequest) returns LoginResponse|ErrorResponse|http:BadRequest {
         string username = loginRequest.username.trim();
-        
+
         if username == "" {
             return <http:BadRequest>{
                 body: {
@@ -23,16 +23,16 @@ service /api on new http:Listener(serverPort) {
                 }
             };
         }
-        
+
         // Check if user exists
         User|error? existingUser = getUserByUsername(username);
-        
+
         if existingUser is error {
             return {
                 'error: "Internal server error"
             };
         }
-        
+
         // Create user if doesn't exist
         if existingUser is () {
             User|error newUser = createUser(username);
@@ -42,7 +42,7 @@ service /api on new http:Listener(serverPort) {
                 };
             }
         }
-        
+
         // Generate JWT token
         string|error token = generateJwtToken(username);
         if token is error {
@@ -50,7 +50,7 @@ service /api on new http:Listener(serverPort) {
                 'error: "Failed to generate token"
             };
         }
-        
+
         return {
             token: token,
             user: {
@@ -70,7 +70,7 @@ service /api on new http:Listener(serverPort) {
                 }
             };
         }
-        
+
         // Get all songs
         Song[]|error songs = getAllSongs();
         if songs is error {
@@ -78,11 +78,11 @@ service /api on new http:Listener(serverPort) {
                 'error: "Failed to retrieve songs"
             };
         }
-        
+
         // Convert to response format
         SongResponse[] songResponses = from Song song in songs
             select toSongResponse(song);
-        
+
         return songResponses;
     }
 
@@ -97,7 +97,7 @@ service /api on new http:Listener(serverPort) {
                 }
             };
         }
-        
+
         // Parse song ID
         int|error songId = int:fromString(id);
         if songId is error {
@@ -107,7 +107,7 @@ service /api on new http:Listener(serverPort) {
                 }
             };
         }
-        
+
         // Get song by ID
         Song|error? song = getSongById(songId);
         if song is error {
@@ -115,7 +115,7 @@ service /api on new http:Listener(serverPort) {
                 'error: "Failed to retrieve song"
             };
         }
-        
+
         if song is () {
             return <http:NotFound>{
                 body: {
@@ -123,7 +123,7 @@ service /api on new http:Listener(serverPort) {
                 }
             };
         }
-        
+
         return toSongResponse(song);
     }
 
@@ -138,11 +138,11 @@ service /api on new http:Listener(serverPort) {
                 }
             };
         }
-        
+
         // Validate required fields
         string title = songRequest.title.trim();
         string artist = songRequest.artist.trim();
-        
+
         if title == "" || artist == "" {
             return <http:BadRequest>{
                 body: {
@@ -150,7 +150,7 @@ service /api on new http:Listener(serverPort) {
                 }
             };
         }
-        
+
         // Set defaults for optional fields
         string album = "";
         string? albumValue = songRequest.album;
@@ -160,7 +160,7 @@ service /api on new http:Listener(serverPort) {
         if album == "" {
             album = "Unknown Album";
         }
-        
+
         string duration = "";
         string? durationValue = songRequest.duration;
         if durationValue is string {
@@ -169,7 +169,7 @@ service /api on new http:Listener(serverPort) {
         if duration == "" {
             duration = "0:00";
         }
-        
+
         string coverUrl = "";
         string? coverUrlValue = songRequest.coverUrl;
         if coverUrlValue is string {
@@ -180,7 +180,7 @@ service /api on new http:Listener(serverPort) {
             int timestampValue = timestamp is int ? timestamp : 0;
             coverUrl = string `https://picsum.photos/seed/${timestampValue}/400/400`;
         }
-        
+
         // Create song
         Song|error newSong = createSong(title, artist, album, duration, coverUrl);
         if newSong is error {
@@ -188,7 +188,7 @@ service /api on new http:Listener(serverPort) {
                 'error: "Failed to create song"
             };
         }
-        
+
         return <http:Created>{
             body: toSongResponse(newSong)
         };
@@ -200,23 +200,23 @@ function validateAuthHeader(string? authHeader) returns string|error {
     if authHeader is () {
         return error("Missing Authorization header");
     }
-    
+
     string authHeaderValue = authHeader;
     if !authHeaderValue.startsWith("Bearer ") {
         return error("Invalid Authorization header format");
     }
-    
+
     string token = authHeaderValue.substring(7);
     var payload = validateJwtToken(token);
-    
+
     if payload is error {
         return error("Invalid token");
     }
-    
+
     string? subject = payload.sub;
     if subject is () {
         return error("Invalid token payload");
     }
-    
+
     return subject;
 }

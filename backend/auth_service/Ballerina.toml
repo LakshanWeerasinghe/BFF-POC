@@ -1,0 +1,19 @@
+[package]
+org = "lakshanwso2"
+name = "auth_service"
+version = "0.1.0"
+distribution = "2201.13.1"
+title = "auth-service"
+
+[build-options]
+sticky = true
+
+[[platform.java17.dependency]]
+groupId = "org.xerial"
+artifactId = "sqlite-jdbc"
+version = "3.41.2.2"
+
+[[dependency]]
+org = "ballerinax"
+name = "crypto"
+version = "2.9.3"

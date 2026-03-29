@@ -1,0 +1,2 @@
+[workspace]
+packages = ["webapp_backend", "auth_service"]
