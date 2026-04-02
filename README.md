@@ -241,6 +241,7 @@ sequenceDiagram
 | [Ballerina](https://ballerina.io/downloads/) | 2201.13.x (Swan Lake Update 13) | BFF + backend services |
 | Java | 17+ | Required by APIM and Ballerina |
 | macOS or Linux | - | `setup.sh` uses bash |
+| `python3` | 3.x | Used by `setup-apim.sh` — pre-installed on macOS and most Linux distros |
 
 > **macOS note:** Port 7000 is occupied by AirPlay Receiver. The BFF runs on port **7001**.
 
@@ -251,33 +252,52 @@ cd webapp-frontend
 npm install
 ```
 
-### APIM (one-time pre-configuration)
-
-The `apim/wso2am-4.4.0/` directory contains a pre-configured APIM instance. The following are already in place - no manual steps needed:
-
-- **MusicLibrary API Product** at `/library/0.9.0`
-- **LibraryApplication** with production keys (Consumer Key + Secret) subscribed to MusicLibrary
-- **CORS** configured to allow the `X-Sonicwave-User-Auth` header
-
-For full APIM configuration details see [`APIM.md`](./APIM.md).
+> **macOS note:** Port 7000 is occupied by AirPlay Receiver. The BFF runs on port **7001**.
 
 ---
 
 ## Running the Application
 
-### Option A - All-in-one (recommended)
+`setup.sh` handles everything — APIM provisioning on first run, then starting all services.
+
+### First run (fresh APIM pack)
 
 ```bash
 chmod +x setup.sh
+./setup.sh --pack /path/to/wso2am-4.4.0.zip
+```
+
+On first run `setup.sh` automatically:
+
+| Step | Action |
+|---|---|
+| 1 | Extracts the APIM zip to `apim/` |
+| 2 | Patches `deployment.toml` to allow `X-Sonicwave-User-Auth` through CORS |
+| 3 | Starts APIM and waits until the REST API is reachable (up to 5 minutes) |
+| 4 | Creates **SonicwaveAuth API** (routes to `auth_service :9090`) |
+| 5 | Creates **SonicwaveSongs API** (routes to `webapp_backend :8080`) |
+| 6 | Deploys and publishes both APIs to the Default gateway |
+| 7 | Creates **MusicLibrary API Product** at `/library/0.9.0` |
+| 8 | Creates **LibraryApplication**, subscribes it, and generates PRODUCTION OAuth keys |
+| 9 | Writes `consumerKey` / `consumerSecret` into `bff_layer/Config.toml` and `bff_layer/config.bal` |
+| 10 | Continues directly to start all services — no restart needed |
+
+A `.sonicwave_configured` marker is written inside the APIM directory so provisioning is never repeated.
+
+### Subsequent runs
+
+```bash
 ./setup.sh
 ```
 
-Services start in this order:
+Starts APIM normally (skips provisioning) then starts all other services.
 
-1. **APIM** - `api-manager.sh start` (blocking until the JVM is up)
-2. **auth_service**, **webapp_backend**, **BFF** - started in parallel
-3. **10 second wait** - services compile and bind their ports
-4. **Frontend** - `npm run dev`
+### Startup order
+
+1. **APIM** — provisioned (first run) or started from existing config
+2. **auth_service**, **webapp_backend**, **BFF** — started in parallel
+3. **10 second wait** — services compile and bind ports
+4. **Frontend** — `npm run dev`
 
 Once ready, the banner prints all URLs:
 
@@ -295,45 +315,26 @@ Logs are written to `*.log` files in the project root. Press **Ctrl+C** to stop 
 
 ---
 
-### Option B - Run each service individually
+### Run each service individually
 
-Open a separate terminal for each service.
-
-**1. APIM**
+If you need to start services separately, open a terminal for each.  
+Replace `wso2am-4.4.0` with the actual extracted folder name if different.
 
 ```bash
+# 1. APIM
 ./apim/wso2am-4.4.0/bin/api-manager.sh start
-# To stop:
-./apim/wso2am-4.4.0/bin/api-manager.sh stop
-```
 
-**2. auth_service**
+# 2. auth_service
+cd backend/auth_service && bal run
 
-```bash
-cd backend/auth_service
-bal run
-```
+# 3. webapp_backend
+cd backend/webapp_backend && bal run
 
-**3. webapp_backend**
+# 4. BFF
+cd bff_layer && bal run
 
-```bash
-cd backend/webapp_backend
-bal run
-```
-
-**4. BFF**
-
-```bash
-cd bff_layer
-bal run
-```
-
-**5. Frontend**
-
-```bash
-cd webapp-frontend
-npm install   # first time only
-npm run dev
+# 5. Frontend
+cd webapp-frontend && npm run dev
 ```
 
 Open **http://localhost:3001** in your browser.
@@ -360,7 +361,7 @@ curl -si -X POST http://localhost:7001/bff/auth/register \
 
 ```
 BFF-POC/
-├── setup.sh                   # One-command startup script
+├── setup.sh                   # One-command startup (provisions APIM on first run)
 ├── APIM.md                    # APIM configuration reference
 ├── BFF_Plan.md                # BFF design decisions & plan
 │
