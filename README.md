@@ -20,41 +20,7 @@ The primary goal is to show how a dedicated BFF layer can sit between a browser-
 
 ## Architecture
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│  Browser                                                         │
-│  SonicWave UI  (Next.js :3001)                                   │
-│  • React 19 + Tailwind CSS                                       │
-│  • No tokens in JavaScript - auth is httpOnly cookie-based       │
-└─────────────────────────┬────────────────────────────────────────┘
-                          │  HTTP  /bff/*  (same-origin, Next.js rewrite)
-                          ▼
-┌──────────────────────────────────────────────────────────────────┐
-│  Ballerina BFF  :7001                                            │
-│  • Holds APIM client credentials (never leave this process)      │
-│  • Fetches and caches the APIM Client Credentials token          │
-│  • Token Handler Pattern: moves user JWT → httpOnly cookie       │
-│  • Injects Authorization + X-Sonicwave-User-Auth on every call   │
-└─────────────────────────┬────────────────────────────────────────┘
-                          │  HTTPS  /library/0.9.0/*
-                          ▼
-┌──────────────────────────────────────────────────────────────────┐
-│  WSO2 APIM 4.4.0  :8243                                          │
-│  MusicLibrary API Product                                        │
-│  • Validates CC token (subscription check, rate limiting)        │
-│  • Strips Authorization before forwarding to backends            │
-│  • Passes X-Sonicwave-User-Auth through unchanged               │
-└──────────┬──────────────────────────────┬────────────────────────┘
-           │                              │
-           ▼                              ▼
-┌──────────────────────┐    ┌─────────────────────────────────────┐
-│  auth_service  :9090 │    │  webapp_backend  :8080              │
-│  Ballerina           │    │  Ballerina + SQLite                 │
-│  • Register / Login  │    │  • Songs CRUD (owner-scoped)        │
-│  • Validate JWT      │    │  • Calls auth_service to identify   │
-│  • Issues HS256 JWTs │    │    the caller on every request      │
-└──────────────────────┘    └─────────────────────────────────────┘
-```
+![Architecture Diagram](docs/architecture.png)
 
 ### Service map
 
