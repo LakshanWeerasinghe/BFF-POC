@@ -1,4 +1,5 @@
 import ballerina/http;
+import ballerina/log;
 import ballerina/time;
 
 @http:ServiceConfig {
@@ -16,8 +17,10 @@ service /api on new http:Listener(serverPort) {
         @http:Header string? Authorization,
         @http:Header {name: "X-Sonicwave-User-Auth"} string? xSonicwaveUserAuth
     ) returns SongResponse[]|ErrorResponse|http:Unauthorized {
+        log:printInfo("GET /api/songs - start");
         CallerInfo|error caller = validateAuthHeader(Authorization, xSonicwaveUserAuth);
         if caller is error {
+            log:printInfo("GET /api/songs - end");
             return <http:Unauthorized>{
                 body: {'error: "Unauthorized"}
             };
@@ -25,11 +28,13 @@ service /api on new http:Listener(serverPort) {
 
         Song[]|error songs = getAllSongs(caller.userId);
         if songs is error {
+            log:printInfo("GET /api/songs - end");
             return {'error: "Failed to retrieve songs"};
         }
 
         SongResponse[] songResponses = from Song song in songs
             select toSongResponse(song);
+        log:printInfo("GET /api/songs - end");
         return songResponses;
     }
 
@@ -38,8 +43,10 @@ service /api on new http:Listener(serverPort) {
         @http:Header string? Authorization,
         @http:Header {name: "X-Sonicwave-User-Auth"} string? xSonicwaveUserAuth
     ) returns SongResponse|ErrorResponse|http:Unauthorized|http:NotFound {
+        log:printInfo("GET /api/songs/" + id + " - start");
         CallerInfo|error caller = validateAuthHeader(Authorization, xSonicwaveUserAuth);
         if caller is error {
+            log:printInfo("GET /api/songs/" + id + " - end");
             return <http:Unauthorized>{
                 body: {'error: "Unauthorized"}
             };
@@ -47,6 +54,7 @@ service /api on new http:Listener(serverPort) {
 
         int|error songId = int:fromString(id);
         if songId is error {
+            log:printInfo("GET /api/songs/" + id + " - end");
             return <http:NotFound>{
                 body: {'error: "Song not found"}
             };
@@ -54,14 +62,17 @@ service /api on new http:Listener(serverPort) {
 
         Song|error? song = getSongById(songId, caller.userId);
         if song is error {
+            log:printInfo("GET /api/songs/" + id + " - end");
             return {'error: "Failed to retrieve song"};
         }
         if song is () {
+            log:printInfo("GET /api/songs/" + id + " - end");
             return <http:NotFound>{
                 body: {'error: "Song not found"}
             };
         }
 
+        log:printInfo("GET /api/songs/" + id + " - end");
         return toSongResponse(song);
     }
 
@@ -71,8 +82,10 @@ service /api on new http:Listener(serverPort) {
         @http:Header {name: "X-Sonicwave-User-Auth"} string? xSonicwaveUserAuth,
         @http:Payload CreateSongRequest songRequest
     ) returns SongResponse|ErrorResponse|http:Unauthorized|http:BadRequest|http:Created {
+        log:printInfo("POST /api/songs - start");
         CallerInfo|error caller = validateAuthHeader(Authorization, xSonicwaveUserAuth);
         if caller is error {
+            log:printInfo("POST /api/songs - end");
             return <http:Unauthorized>{
                 body: {'error: "Unauthorized"}
             };
@@ -82,6 +95,7 @@ service /api on new http:Listener(serverPort) {
         string artist = songRequest.artist.trim();
 
         if title == "" || artist == "" {
+            log:printInfo("POST /api/songs - end");
             return <http:BadRequest>{
                 body: {'error: "Title and artist are required"}
             };
@@ -118,9 +132,11 @@ service /api on new http:Listener(serverPort) {
 
         Song|error newSong = createSong(title, artist, album, duration, coverUrl, caller.userId);
         if newSong is error {
+            log:printInfo("POST /api/songs - end");
             return {'error: "Failed to create song"};
         }
 
+        log:printInfo("POST /api/songs - end");
         return <http:Created>{
             body: toSongResponse(newSong)
         };
