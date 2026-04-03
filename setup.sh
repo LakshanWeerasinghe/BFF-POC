@@ -2,14 +2,16 @@
 #
 # setup.sh — SonicWave complete setup and startup
 #
-# First run (fresh APIM pack):
-#   ./setup.sh --pack /path/to/wso2am-4.4.0.zip
+# First run — provide a local pack or let the script download one:
+#   ./setup.sh --pack /path/to/wso2am-4.4.0.zip   # use a local zip
+#   ./setup.sh                                      # auto-download from WSO2 VPN
 #
 # Subsequent runs (APIM already provisioned):
 #   ./setup.sh
 #
 # What it does on first run:
-#   • Extracts the APIM pack, patches CORS config
+#   • Resolves the APIM pack: --pack flag → existing extracted dir → VPN download
+#   • Extracts the pack, patches CORS config in deployment.toml
 #   • Starts APIM and provisions APIs, API Product, application, and OAuth keys via REST
 #   • Writes generated credentials into bff_layer/Config.toml
 #   • Continues to start all services without restarting APIM
@@ -38,32 +40,71 @@ done
 
 # ─── paths ────────────────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+APIM_DOWNLOAD_URL="https://atuwa.private.wso2.com/WSO2-Products/api-manager/4.0.0/APIM/wso2am-4.0.0.zip"
+APIM_DOWNLOAD_DEST="$SCRIPT_DIR/apim/wso2am-download.zip"
 
-# Detect APIM version — from zip if provided, otherwise from existing directory.
+# ─── resolve APIM pack ────────────────────────────────────────────────────────
+# Priority: --pack flag → existing extracted directory → download from WSO2 VPN
+
+# 1. --pack flag was given
+if [[ -n "$PACK_PATH" && ! -f "$PACK_PATH" ]]; then
+  die "Pack not found: $PACK_PATH"
+fi
+
+# 2. No --pack — look for an existing extracted directory
+if [[ -z "$PACK_PATH" ]]; then
+  # Prefer a directory already provisioned
+  FOUND=$(for d in "$SCRIPT_DIR/apim"/*/; do
+    v=$(basename "$d")
+    [[ "$v" == "auth-handler" ]] && continue
+    [[ -f "$d/.sonicwave_configured" ]] && echo "$d" && break
+  done || true)
+  # Fall back to any directory with a deployment.toml
+  if [[ -z "$FOUND" ]]; then
+    FOUND=$(for d in "$SCRIPT_DIR/apim"/*/; do
+      v=$(basename "$d")
+      [[ "$v" == "auth-handler" ]] && continue
+      [[ -f "$d/repository/conf/deployment.toml" ]] && echo "$d" && break
+    done || true)
+  fi
+  if [[ -n "$FOUND" ]]; then
+    PACK_PATH=""   # already extracted — skip extraction below
+  else
+    # 3. Nothing found — download from WSO2 internal mirror
+    echo ""
+    warn "No APIM pack or extracted directory found."
+    echo ""
+    echo "  The pack will be downloaded from the WSO2 internal mirror:"
+    echo "  $APIM_DOWNLOAD_URL"
+    echo ""
+    echo "  ⚠  You must be connected to the WSO2 VPN before continuing."
+    echo "     If you are not on VPN the download will fail."
+    echo ""
+    read -r -p "  Press Enter to continue or Ctrl+C to abort... "
+    echo ""
+    info "Downloading APIM pack..."
+    mkdir -p "$SCRIPT_DIR/apim"
+    if ! curl -L --fail --progress-bar -o "$APIM_DOWNLOAD_DEST" "$APIM_DOWNLOAD_URL"; then
+      rm -f "$APIM_DOWNLOAD_DEST"
+      die "Download failed. Check your VPN connection and try again."
+    fi
+    ok "Download complete."
+    PACK_PATH="$APIM_DOWNLOAD_DEST"
+  fi
+fi
+
+# Detect APIM version — from zip if pack provided, otherwise from found directory.
 # Prefers a directory that already has the .sonicwave_configured marker.
-if [[ -n "$PACK_PATH" && -f "$PACK_PATH" ]]; then
+if [[ -n "$PACK_PATH" ]]; then
   APIM_VERSION=$(python3 -c "
 import zipfile, sys
 with zipfile.ZipFile(sys.argv[1]) as z:
     print(z.namelist()[0].split('/')[0])
 " "$PACK_PATH")
 else
-  # Prefer a directory that was already provisioned
-  APIM_VERSION=$(for d in "$SCRIPT_DIR/apim"/*/; do
-    v=$(basename "$d")
-    [[ "$v" == "auth-handler" ]] && continue
-    [[ -f "$d/.sonicwave_configured" ]] && echo "$v" && break
-  done || true)
-  # Fall back to any APIM directory
-  if [[ -z "$APIM_VERSION" ]]; then
-    APIM_VERSION=$(for d in "$SCRIPT_DIR/apim"/*/; do
-      v=$(basename "$d")
-      [[ "$v" == "auth-handler" ]] && continue
-      [[ -f "$d/repository/conf/deployment.toml" ]] && echo "$v" && break
-    done || true)
-  fi
+  APIM_VERSION=$(basename "$FOUND")
 fi
-[[ -z "$APIM_VERSION" ]] && die "Cannot find APIM pack. Provide --pack /path/to/wso2am-*.zip"
+[[ -z "$APIM_VERSION" ]] && die "Cannot determine APIM version."
 
 APIM_HOME="$SCRIPT_DIR/apim/$APIM_VERSION"
 APIM_CONFIGURED_MARKER="$APIM_HOME/.sonicwave_configured"
@@ -74,7 +115,7 @@ BFF_CONFIG_TOML="$SCRIPT_DIR/bff_layer/Config.toml"
 AUTH_SERVICE_DIR="$SCRIPT_DIR/backend/auth_service"
 WEBAPP_BACKEND_DIR="$SCRIPT_DIR/backend/webapp_backend"
 BFF_DIR="$SCRIPT_DIR/bff_layer"
-FRONTEND_DIR="$SCRIPT_DIR/webapp-frontend"
+FRONTEND_DIR="$SCRIPT_DIR/frontend"
 
 APIM_ADMIN="https://localhost:9443"
 APIM_PUBLISHER="$APIM_ADMIN/api/am/publisher/v4"
@@ -91,8 +132,13 @@ FRONTEND_LOG="$SCRIPT_DIR/frontend.log"
 AUTH_PID=""; WEBAPP_PID=""; BFF_PID=""; FRONTEND_PID=""
 
 # ─── check required tools ─────────────────────────────────────────────────────
-for cmd in curl python3 unzip bal npm; do
-  command -v "$cmd" &>/dev/null || die "'$cmd' is required but not found."
+for cmd in curl python3 unzip bal npm lsof; do
+  if ! command -v "$cmd" &>/dev/null; then
+    if [[ "$cmd" == "lsof" ]]; then
+      die "'lsof' is required but not found.\n  macOS: brew install lsof\n  Ubuntu/Debian: sudo apt install lsof"
+    fi
+    die "'$cmd' is required but not found."
+  fi
 done
 
 # ─── helpers ──────────────────────────────────────────────────────────────────
@@ -113,15 +159,55 @@ curl_apim() {
   echo "$body"
 }
 
+# ─── port helpers ─────────────────────────────────────────────────────────────
+# check_ports <port>... — if any port is occupied show the owner and ask to kill
+check_ports() {
+  local busy_ports=() display_pids=()
+  for port in "$@"; do
+    # lsof may return multiple PIDs (one per line); take the first for display only
+    local pid
+    pid=$(lsof -ti tcp:"$port" 2>/dev/null | head -1 || true)
+    [[ -n "$pid" ]] && busy_ports+=("$port") && display_pids+=("$pid")
+  done
+  [[ ${#busy_ports[@]} -eq 0 ]] && return 0
+
+  echo ""
+  warn "The following ports are already in use:"
+  echo ""
+  for i in "${!busy_ports[@]}"; do
+    local proc
+    proc=$(ps -p "${display_pids[$i]}" -o comm= 2>/dev/null | head -1 || echo "unknown")
+    echo "  :${busy_ports[$i]}  →  PID ${display_pids[$i]}  ($proc)"
+  done
+  echo ""
+  read -r -p "  Kill these processes and continue? [y/N] " answer
+  echo ""
+  [[ "$answer" =~ ^[Yy]$ ]] || die "Aborted. Free the ports listed above and try again."
+  # Kill all PIDs on each port (handles multiple listeners per port)
+  for port in "${busy_ports[@]}"; do
+    lsof -ti tcp:"$port" 2>/dev/null | xargs kill -9 2>/dev/null || true
+  done
+  ok "Conflicting processes killed."
+  sleep 1
+}
+
 # ─── stop handler ─────────────────────────────────────────────────────────────
 stop_services() {
   echo ""
   echo "Stopping all services..."
-  [[ -n "$FRONTEND_PID" ]] && kill "$FRONTEND_PID" 2>/dev/null || true
-  [[ -n "$BFF_PID"      ]] && kill "$BFF_PID"      2>/dev/null || true
-  [[ -n "$AUTH_PID"     ]] && kill "$AUTH_PID"      2>/dev/null || true
-  [[ -n "$WEBAPP_PID"   ]] && kill "$WEBAPP_PID"    2>/dev/null || true
+  # SIGTERM tracked PIDs (exec means $! == actual process, not a wrapper shell)
+  for pid in "$FRONTEND_PID" "$BFF_PID" "$AUTH_PID" "$WEBAPP_PID"; do
+    [[ -n "$pid" ]] && kill -TERM "$pid" 2>/dev/null || true
+  done
+  sleep 2
+  # Force-kill anything still alive on our ports (catches child processes and npm workers)
+  # Loop over ports individually — comma-separated syntax is not portable on GNU lsof
+  for _port in 9090 8080 7001 3001; do
+    lsof -ti tcp:"$_port" 2>/dev/null | xargs kill -9 2>/dev/null || true
+  done
+  # Stop APIM
   "$APIM_HOME/bin/api-manager.sh" stop 2>/dev/null || true
+  echo "All services stopped."
   exit 0
 }
 trap stop_services INT TERM
@@ -157,6 +243,8 @@ if [[ ! -f "$APIM_CONFIGURED_MARKER" ]]; then
     unzip -q "$PACK_PATH" -d "$SCRIPT_DIR/apim"
     [[ -d "$APIM_HOME" ]] || die "Extraction failed — expected directory: $APIM_HOME"
     ok "Extracted to apim/$APIM_VERSION/"
+    # Remove the downloaded zip if it was fetched automatically (keep user-provided packs)
+    [[ "$PACK_PATH" == "$APIM_DOWNLOAD_DEST" ]] && rm -f "$APIM_DOWNLOAD_DEST"
   fi
 
   # 2. Patch deployment.toml CORS
@@ -175,6 +263,7 @@ if [[ ! -f "$APIM_CONFIGURED_MARKER" ]]; then
   fi
 
   # 3. Start APIM and wait
+  check_ports 9443 8243
   info "Starting APIM for provisioning..."
   "$APIM_HOME/bin/api-manager.sh" start > "$APIM_LOG" 2>&1
   info "Waiting for APIM REST API to be reachable (up to 5 minutes)..."
@@ -384,6 +473,7 @@ TOML
 # PHASE 1B — SUBSEQUENT RUN: start APIM normally
 # ─────────────────────────────────────────────────────────────────────────────
 else
+  check_ports 9443 8243
   info "APIM already provisioned — starting..."
   "$APIM_HOME/bin/api-manager.sh" start > "$APIM_LOG" 2>&1
   ok "APIM started. (log: apim.log)"
@@ -398,18 +488,20 @@ echo "  Starting services"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
+check_ports 9090 8080 7001 3001
+
 info "Starting auth_service on :9090..."
-(cd "$AUTH_SERVICE_DIR" && bal run > "$AUTH_LOG" 2>&1) &
+(cd "$AUTH_SERVICE_DIR" && exec bal run > "$AUTH_LOG" 2>&1) &
 AUTH_PID=$!
 ok "auth_service   PID $AUTH_PID  (log: auth_service.log)"
 
 info "Starting webapp_backend on :8080..."
-(cd "$WEBAPP_BACKEND_DIR" && bal run > "$WEBAPP_LOG" 2>&1) &
+(cd "$WEBAPP_BACKEND_DIR" && exec bal run > "$WEBAPP_LOG" 2>&1) &
 WEBAPP_PID=$!
 ok "webapp_backend PID $WEBAPP_PID  (log: webapp_backend.log)"
 
 info "Starting BFF on :7001..."
-(cd "$BFF_DIR" && bal run > "$BFF_LOG" 2>&1) &
+(cd "$BFF_DIR" && exec bal run > "$BFF_LOG" 2>&1) &
 BFF_PID=$!
 ok "bff_layer      PID $BFF_PID  (log: bff_layer.log)"
 
@@ -418,7 +510,7 @@ info "Waiting 10s for services to initialise..."
 sleep 10
 
 info "Starting frontend on :3001..."
-(cd "$FRONTEND_DIR" && npm run dev > "$FRONTEND_LOG" 2>&1) &
+(cd "$FRONTEND_DIR" && exec npm run dev > "$FRONTEND_LOG" 2>&1) &
 FRONTEND_PID=$!
 ok "frontend       PID $FRONTEND_PID  (log: frontend.log)"
 

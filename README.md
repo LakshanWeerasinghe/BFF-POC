@@ -1,6 +1,6 @@
 # SonicWave - BFF Pattern POC
 
-A proof-of-concept demonstrating the **Backend for Frontend (BFF)** pattern using a real microservice stack. The application is a music library where users can register, log in, and manage their personal song collection.
+A proof-of-concept demonstrating the **Backend for Frontend (BFF)** pattern. The application is a music library where users can register, log in, and manage their personal song collection.
 
 The primary goal is to show how a dedicated BFF layer can sit between a browser-based frontend and an API gateway - handling authentication token management, APIM credential protection, and session security - without the frontend ever touching sensitive tokens or API manager credentials.
 
@@ -15,7 +15,6 @@ The primary goal is to show how a dedicated BFF layer can sit between a browser-
 | CSRF protection | `SameSite=Strict` cookie attribute |
 | Dual-token APIM flow | BFF injects CC token + user JWT as separate headers |
 | Stateless session scaling | Cookie carries the JWT itself - no server-side session store needed |
-| Separation of concerns | Auth, songs, API management, and the browser adapter are independent services |
 
 ---
 
@@ -61,7 +60,7 @@ The primary goal is to show how a dedicated BFF layer can sit between a browser-
 
 | Service | Port | Technology |
 |---|---|---|
-| Frontend | 3001 | Next.js 16, React 19, Tailwind CSS |
+| Frontend | 3001 | Next.js 16 |
 | BFF | 7001 | Ballerina 2201.13.2 |
 | APIM Gateway | 8243 | WSO2 API Manager 4.4.0 |
 | APIM Management | 9443 | WSO2 API Manager 4.4.0 |
@@ -72,14 +71,12 @@ The primary goal is to show how a dedicated BFF layer can sit between a browser-
 
 ## Key Components
 
-### Frontend - `webapp-frontend/`
+### Frontend - `frontend/`
 
 A Next.js application with two responsibilities:
 
 1. **Serve the React UI** - pages for login, register, song list, song detail, and add song
 2. **Proxy `/bff/*` to the BFF** via a single Next.js rewrite rule in `next.config.ts`
-
-The frontend has no token logic whatsoever. `src/lib/api.ts` is the entire API client - it is 60 lines, makes plain `fetch` calls with `credentials: 'include'`, and relies on the browser to attach the session cookie automatically. There are no `Authorization` headers, no `localStorage` token reads, and no APIM awareness.
 
 ### BFF - `bff_layer/`
 
@@ -137,25 +134,6 @@ BFF response to browser on login:
 
   { "user": { "id": "3", "username": "alice" } }
                 ↑ token is NOT in the body
-```
-
-### Cookie properties
-
-| Attribute | Value | Reason |
-|---|---|---|
-| `HttpOnly` | true | Token invisible to JavaScript; blocks XSS token theft |
-| `SameSite` | Strict | Blocks cross-site request forgery |
-| `Path` | `/bff` | Cookie only sent to BFF routes |
-| `Max-Age` | 86400 | Matches the auth_service JWT TTL (24 hours) |
-| `Secure` | not set in dev | Must be added in production (requires HTTPS end-to-end) |
-
-### Session lifecycle
-
-```
-Register / Login  → BFF sets auth_token cookie
-Page reload       → GET /bff/auth/validate → BFF reads cookie → APIM → 200 or 401
-Any 401 response  → FE dispatches auth:unauthorized → user state cleared
-Logout            → POST /bff/auth/logout → BFF sets Max-Age=0 → cookie deleted
 ```
 
 ---
@@ -239,20 +217,18 @@ sequenceDiagram
 |---|---|---|
 | [Node.js](https://nodejs.org/) | v22+ | Frontend runtime |
 | [Ballerina](https://ballerina.io/downloads/) | 2201.13.x (Swan Lake Update 13) | BFF + backend services |
-| Java | 17+ | Required by APIM and Ballerina |
+| Java | 21 | Required by APIM and Ballerina |
 | macOS or Linux | - | `setup.sh` uses bash |
-| `python3` | 3.x | Used by `setup-apim.sh` — pre-installed on macOS and most Linux distros |
+| `python3` | 3.x | Pre-installed on macOS and most Linux distros |
+| `lsof` | any | Pre-installed on macOS; Ubuntu: `sudo apt install lsof` |
 
-> **macOS note:** Port 7000 is occupied by AirPlay Receiver. The BFF runs on port **7001**.
 
 ### Frontend dependencies
 
 ```bash
-cd webapp-frontend
+cd frontend
 npm install
 ```
-
-> **macOS note:** Port 7000 is occupied by AirPlay Receiver. The BFF runs on port **7001**.
 
 ---
 
@@ -260,12 +236,19 @@ npm install
 
 `setup.sh` handles everything — APIM provisioning on first run, then starting all services.
 
-### First run (fresh APIM pack)
+### First run
 
 ```bash
 chmod +x setup.sh
+
+# Option A — provide a local pack
 ./setup.sh --pack /path/to/wso2am-4.4.0.zip
+
+# Option B — no pack available: the script downloads one automatically
+./setup.sh
 ```
+
+> **Option B requires WSO2 VPN.** The pack is downloaded from `atuwa.private.wso2.com`, which is only reachable on the WSO2 internal network. The script will pause and ask you to confirm before downloading.
 
 On first run `setup.sh` automatically:
 
@@ -315,48 +298,6 @@ Logs are written to `*.log` files in the project root. Press **Ctrl+C** to stop 
 
 ---
 
-### Run each service individually
-
-If you need to start services separately, open a terminal for each.  
-Replace `wso2am-4.4.0` with the actual extracted folder name if different.
-
-```bash
-# 1. APIM
-./apim/wso2am-4.4.0/bin/api-manager.sh start
-
-# 2. auth_service
-cd backend/auth_service && bal run
-
-# 3. webapp_backend
-cd backend/webapp_backend && bal run
-
-# 4. BFF
-cd bff_layer && bal run
-
-# 5. Frontend
-cd webapp-frontend && npm run dev
-```
-
-Open **http://localhost:3001** in your browser.
-
----
-
-### Quick smoke test
-
-```bash
-# BFF with no cookie → should return 401
-curl http://localhost:7001/bff/auth/validate
-
-# Register a user
-curl -si -X POST http://localhost:7001/bff/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"username":"alice","password":"password123"}'
-# Response: Set-Cookie: auth_token=...; HttpOnly
-# Body:     { "user": { "id": "...", "username": "alice" } }
-```
-
----
-
 ## Repository Structure
 
 ```
@@ -378,7 +319,7 @@ BFF-POC/
 │   ├── auth_service/          # Ballerina auth service (:9090)
 │   └── webapp_backend/        # Ballerina songs API (:8080)
 │
-├── webapp-frontend/           # Next.js frontend (:3001)
+├── frontend/           # Next.js frontend (:3001)
 │   ├── src/
 │   │   ├── app/               # Next.js App Router pages
 │   │   ├── components/        # Navigation, ProtectedRoute, etc.
