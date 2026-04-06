@@ -168,6 +168,7 @@ function doAuthenticatedGet(http:Request req, string apimPath) returns http:Resp
 
     string|error userToken = readAuthCookie(req);
     if userToken is error {
+        log:printWarn("auth_token cookie missing in request to " + apimPath + " — returning 401");
         res.statusCode = 401;
         res.setJsonPayload({"error": "Unauthorized"});
         return res;
@@ -190,6 +191,10 @@ function doAuthenticatedGet(http:Request req, string apimPath) returns http:Resp
         res.statusCode = 502;
         res.setJsonPayload({"error": "Upstream service error"});
         return res;
+    }
+
+    if apimRes.statusCode == 401 {
+        log:printWarn("APIM returned 401 for " + apimPath + " — user token may be invalid or APIM subscription issue");
     }
 
     res.statusCode = apimRes.statusCode;

@@ -54,7 +54,12 @@ export const authApi = {
   },
 
   validate(): Promise<{ userId: string; username: string }> {
-    return apiFetch('/bff/auth/validate');
+    // Use plain fetch — a 401 here means "no session" (expected on startup)
+    // and must NOT dispatch auth:unauthorized, which would race with login.
+    return fetch('/bff/auth/validate', { credentials: 'include' }).then(res => {
+      if (!res.ok) throw new Error('Unauthorized');
+      return res.json();
+    });
   },
 
   logout(): Promise<void> {

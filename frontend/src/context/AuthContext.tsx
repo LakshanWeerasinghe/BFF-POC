@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { authApi } from '../lib/api';
 import type { User } from '../types';
 
@@ -27,13 +27,23 @@ function clearUser() {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser]         = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const isLoggingOut = useRef(false);
+  // Tracks whether the user has explicitly logged out in this session.
+  // Used to discard a startup validate() result that arrives AFTER logout —
+  // otherwise the stale success would call setUser() again and restart the
+  // login → songs → logout → validate-succeeds → login loop.
+  const hasLoggedOut = useRef(false);
 
   const logout = useCallback(async () => {
+    if (isLoggingOut.current) return;
+    isLoggingOut.current = true;
+    hasLoggedOut.current = true; // Prevent any in-flight validate() from re-setting user.
     try {
       await authApi.logout(); // BFF clears the httpOnly cookie
     } catch { /* ignore network errors on logout */ }
     setUser(null);
     clearUser();
+    isLoggingOut.current = false;
   }, []);
 
   // On startup: call BFF validate to check whether the session cookie is still valid.
@@ -42,6 +52,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     authApi
       .validate()
       .then(({ userId, username }) => {
+        // Guard: if the user explicitly logged out while validate() was in-flight
+        // (race condition: login → songs → 401 → logout → validate() resolves),
+        // discard the result to avoid re-setting user and restarting the nav loop.
+        if (hasLoggedOut.current) return;
         const u: User = { id: userId, username };
         setUser(u);
         persistUser(u);
@@ -53,9 +67,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => setIsLoading(false));
   }, []);
 
-  // Listen for 401 events dispatched by apiFetch
+  // Track the current user in a ref so the event handler (a stale closure)
+  // can read the latest value without being added to the dependency array.
+  const userRef = useRef<User | null>(null);
+  useEffect(() => { userRef.current = user; }, [user]);
+
+  // Listen for 401 events dispatched by apiFetch.
+  // Before logging out, re-validate the session: a 401 on one endpoint
+  // (e.g. /bff/songs) doesn't necessarily mean the session cookie is invalid —
+  // it could be a transient error or an endpoint-specific APIM rejection.
+  // If validate() also fails, the session is genuinely expired → logout.
   useEffect(() => {
-    const handler = () => { logout(); };
+    const handler = async () => {
+      if (!userRef.current) return; // Already logged out — nothing to do.
+      try {
+        await authApi.validate();
+        // validate succeeded → session still active; don't logout.
+      } catch {
+        // validate also failed → session is genuinely invalid.
+        logout();
+      }
+    };
     window.addEventListener('auth:unauthorized', handler);
     return () => window.removeEventListener('auth:unauthorized', handler);
   }, [logout]);

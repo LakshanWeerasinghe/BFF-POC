@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, FormEvent } from 'react';
+import { useState, useEffect, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '../../context/AuthContext';
@@ -11,9 +11,21 @@ export default function Login() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const { login } = useAuth();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { login, user, isLoading: authIsLoading } = useAuth();
   const router = useRouter();
+
+  // Redirect once React has committed the user state — avoids a race where
+  // router.push('/songs') fires before setUser() is committed, causing
+  // ProtectedRoute to see user=null and bounce back to /login.
+  // router is intentionally excluded: replace('/songs') changes the router ref,
+  // which would re-trigger this effect, causing an infinite navigation loop.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!authIsLoading && user) {
+      router.replace('/songs');
+    }
+  }, [authIsLoading, user]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -22,16 +34,16 @@ export default function Login() {
       return;
     }
 
-    setIsLoading(true);
+    setIsSubmitting(true);
     setError('');
 
     try {
       await login(username.trim(), password);
-      router.push('/songs');
+      // Navigation is handled by the useEffect above once user state is committed.
     } catch (err: any) {
       setError(err.message === 'Unauthorized' ? 'Invalid username or password' : 'Login failed. Please try again.');
     } finally {
-      setIsLoading(false);
+      setIsSubmitting(false);
     }
   };
 
@@ -94,10 +106,10 @@ export default function Login() {
 
           <button
             type="submit"
-            disabled={isLoading}
+            disabled={isSubmitting}
             className="w-full flex items-center justify-center py-3 px-4 border border-transparent rounded-xl text-black bg-orange-500 hover:bg-orange-600 font-bold focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 focus:ring-offset-black transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isLoading ? 'Signing in...' : 'Sign In'}
+            {isSubmitting ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
 

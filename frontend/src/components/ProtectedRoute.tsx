@@ -12,7 +12,11 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
     if (!isLoading && !user) {
       router.push('/login');
     }
-  }, [user, isLoading, router]);
+    // router is intentionally excluded — it is a stable singleton in Next.js App Router.
+    // Including it causes an infinite loop: push('/login') → router ref changes → effect
+    // re-runs → push('/login') again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, isLoading]);
 
   if (isLoading) {
     return (

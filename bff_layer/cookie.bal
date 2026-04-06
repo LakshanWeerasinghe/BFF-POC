@@ -17,14 +17,14 @@ function readAuthCookie(http:Request req) returns string|error {
     return error("auth_token cookie not found");
 }
 
-// Appends Set-Cookie to the response with HttpOnly.
+// cookie is sent on same-site navigations and safe cross-site top-level GETs.
 function setAuthCookie(http:Response res, string token, int maxAge) {
-    http:Cookie cookie = new (COOKIE_NAME, token, path = "/bff", maxAge = maxAge, httpOnly = true);
+    http:Cookie cookie = new (COOKIE_NAME, token, path = "/", maxAge = maxAge, httpOnly = true);
     res.addCookie(cookie);
 }
 
 // Clears the auth cookie in the browser by setting Max-Age=0 directly.
 // Ballerina's addCookie silently drops Max-Age=0, so we write the header manually.
 function clearAuthCookie(http:Response res) {
-    res.setHeader("Set-Cookie", COOKIE_NAME + "=deleted; Path=/bff; Max-Age=0; HttpOnly");
+    res.setHeader("Set-Cookie", COOKIE_NAME + "=deleted; Path=/; Max-Age=0; HttpOnly");
 }
